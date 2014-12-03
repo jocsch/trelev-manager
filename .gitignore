@@ -1,0 +1,10 @@
+.cache
+.classpath
+.metadata
+.project
+.settings
+journal
+snapshots
+target
+project/project
+project/target
