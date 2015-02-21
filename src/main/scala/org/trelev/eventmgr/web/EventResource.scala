@@ -67,7 +67,9 @@ class EventResource(event: ActorRef)(implicit executionContext: ExecutionContext
               }
             } ~
               post {
-                handleWith { ev: EventBody => (event ? CreateEvent(Event(null, TenantID(tenant), ev.title, ev.description, ev.host, ev.location, ev.date, ev.duration, ev.maxParticipants))).mapTo[Event] }
+                  authenticate(byToken(TenantID(tenant))) { tid =>
+		                handleWith { ev: EventBody => (event ? CreateEvent(Event(null, TenantID(tenant), ev.title, ev.description, ev.host, ev.location, ev.date, ev.duration, ev.maxParticipants))).mapTo[Event] }
+                  }
               }
           } ~
             pathPrefix(Segment) { id =>
