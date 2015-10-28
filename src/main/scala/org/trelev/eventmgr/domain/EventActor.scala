@@ -59,6 +59,8 @@ class EventActor(mailActor: ActorRef) extends PersistentActor with ActorLogging 
       case GetParticipientState(id) => sender ! participants.get(id).map(s => s.map(_.email))
       case CreateEvent(ev) => persist(createEvent(ev)) { create =>
         eventCreated(create)
+        
+        log.info("Event created: " + create.event)
         sender ! create.event
       }
       case CancelEvent(id, inform) => 
@@ -74,7 +76,11 @@ class EventActor(mailActor: ActorRef) extends PersistentActor with ActorLogging 
                 }
               }
             }
-            eventCanceled(cancel)
+            
+          val ev = events.get(id)
+          
+          eventCanceled(cancel)
+	        log.info(s"Event cancelled: $ev")
 	        sender ! Some(Ok) 
           }
       } 
@@ -93,6 +99,7 @@ class EventActor(mailActor: ActorRef) extends PersistentActor with ActorLogging 
                 }
               }
 	          }
+            log.info(s"Event updated: $event")
 	          sender ! Some(upd.event)
 	        }
         }
@@ -110,6 +117,8 @@ class EventActor(mailActor: ActorRef) extends PersistentActor with ActorLogging 
         } else persist(ParticipantRegistered(id, part)) { reg =>
           participantRegistered(reg)
           val event = events(id)
+          
+          log.info(s"Participant registered: $part  at $event")
           sender ! Right(publicEvent(event))
           
           mailActor ! BroadMail(event, reg.participant, "register")
@@ -124,12 +133,13 @@ class EventActor(mailActor: ActorRef) extends PersistentActor with ActorLogging 
           val event = events(id)
           mailActor ! BroadMail(event, part, "leave")
           
+          log.info(s"Participant unregistered: $part  at $event")
     	 	  participantUnregistered(unreg)
     	 	  sender ! Right(Ok)
     	 	}
     	 }.getOrElse(sender ! Left(UnregisterParticipantFailed("No participant with this e-mail", 404)))
     	   
-      }
+      
       case _ => 
 
     }
