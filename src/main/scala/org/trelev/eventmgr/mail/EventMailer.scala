@@ -12,6 +12,12 @@ import org.joda.time.format.DateTimeFormat
 import org.trelev.eventmgr.domain.Participant
 import org.trelev.eventmgr.domain.Event
 import scala.concurrent.Future
+import akka.actor.Props
+import akka.actor.OneForOneStrategy
+import org.trelev.eventmgr.mail.MailSender.SendingFailedException
+import scala.concurrent.duration._
+import akka.actor.SupervisorStrategy.Restart
+import org.trelev.eventmgr.mail.MailSender.MailData
 
 
 case class BroadMail(event: Event, participant: Participant, template: String)
@@ -23,6 +29,11 @@ class EventMailer extends Actor with ActorLogging {
   //this is important as the courier mail sending future might block on smtp problems.
   // a separate threadpool prevents thread starvation for the webserving requests.
   implicit val executionContext = context.system.dispatchers.lookup("mail-dispatcher")
+  
+  //restart the mailer actor 5 times over 20 minutes to redeliver the message
+  override val supervisorStrategy = OneForOneStrategy(5, 20 minutes) {
+    case _ => Restart
+  }
   
   val config = context.system.settings.config
   //TODO process list
@@ -76,9 +87,11 @@ class EventMailer extends Actor with ActorLogging {
                  processTemplate(tenant.getString(s"$template-body"), params),
                  participant.email)
         
-        sendMail(processTemplate(tenant.getString(s"$template-notify-title"), params),
-                 processTemplate(tenant.getString(s"$template-notify-body"), params),
-                 event.host.email)
+        if (!event.host.email.isEmpty()) {
+	        sendMail(processTemplate(tenant.getString(s"$template-notify-title"), params),
+	                 processTemplate(tenant.getString(s"$template-notify-body"), params),
+	                 event.host.email)
+        }
         
         tenant.getStringList("bcc").asScala.foreach { bcc => 
 	        sendMail(processTemplate(tenant.getString(s"$template-bcc-title"), params),
@@ -90,11 +103,8 @@ class EventMailer extends Actor with ActorLogging {
   
   
   def sendMail(title: String, body: String, recipient: String) {
-	      mailer(Envelope.from(new InternetAddress(tenant.getString("sender")))
-	        .to(new InternetAddress(recipient))
-	        .subject(title)
-          .replyTo(new InternetAddress(tenant.getString("sender")))
-	        .content(Text(body))).onComplete(res => log.info(s"E-mail sent to $recipient with title $title. Result: " + res))
+         val mailSender = context.actorOf(Props(classOf[MailSender], mailer))
+         mailSender ! MailData(tenant.getString("sender"), title, body, recipient)
   }
   
   def assembleMailParams(event: Event, par: Participant): Map[String, String] =  {
